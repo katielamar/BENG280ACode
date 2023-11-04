@@ -3,17 +3,13 @@ import matplotlib.pyplot as plt
 class estimateSpectrum:
     def __init__(self,factor, muHelper, deltaXvec,energyStart, energyStop, numEnergySteps,Izero, sinogramData, initialWs):
         assert (np.shape(muHelper) == (len(muHelper),numEnergySteps) and 1<= len(muHelper), "muHelper needs shape (numMeasurements,numEnergySteps)")
-        
         assert (np.shape(deltaXvec) == (len(muHelper),), "len(deltaXvec) should be (numMeasurements,)")
         assert(energyStop-energyStart > 0, "energyStop > energyStart")
         assert(numEnergySteps > 0, "numEnergySteps > 0")
-
-
         assert(np.shape(sinogramData)[0] == numEnergySteps, "Data should have shape (numEnergySteps,M,N)")
         assert(np.shape(sinogramData)[1] == np.shape(Izero)[0] and np.shape(sinogramData)[2] == np.shape(Izero)[1], "Izero should have shape (numAngles, numDetectors)")
         assert(np.shape(initialWs)==(numEnergySteps, np.shape(sinogramData)[1],np.shape(sinogramData)[2]), "Initial Ws must have shape (numEnergySteps, numAngles, numDetectors)")
 
-    
         self.mu_vec = muHelper
         self.deltaXs = deltaXvec
         self.numMeasurements = len(muHelper)
@@ -24,17 +20,18 @@ class estimateSpectrum:
         self.numAngles = np.shape(sinogramData)[1]
         self.numDetectors = np.shape(sinogramData)[2]
 
-        self.data = mean(sinogramData,2)  ## numMeasurements x numAngles
-        self.Izero = mean(Izero,1) ##numAngles x 1
-        self.raw = -factor * [np.divide(np.log(self.data[0]), Izero) for i in range(numEnergySteps)] ## numMeasurements x numAngles
+        self.data = sinogramData  ## numMeasurements x numAngles x numDetectors
+        self.Izero = Izero ##numAngles x numDetectors
+        self.raw = -factor * [np.divide(np.log(self.data[0]), Izero) for i in range(numEnergySteps)] ## numMeasurements x numAngles x numDetectors
         self.exp =np.exp(np.multiply(np.transpose([deltaXvec for i in range(numEnergySteps)]),muHelper)) ## numMeasurements x numEnergySteps
         self.sumAlongMeasurements = np.sum(self.exp, axis=0) ##numEnergySteps x 1
         self.sumAlongEnergySteps = np.sum(self.exp, axis=1) ##numMeasurements x 1
         self.Ws = initialWs ## numEnergySteps x numAngles x numDetectors
 
-    def getEstimate(self,numSteps, angle):
+    def getEstimate(self,numSteps):
         for i in range(numSteps):
-            self.Ws[:,theta,d] = self.update(self.Ws[:,angle], self.raw[:,angle])
+            for (theta, d) in zip(range(self.numAngles), range(self.numDetectors)):
+                self.Ws[:,theta,d] = self.update(self.Ws[:,theta,d], self.raw[:,theta,d])
         return self.Ws
 
     def update(self,lastWs,raw):
