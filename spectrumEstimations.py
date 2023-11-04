@@ -2,12 +2,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 from skimage.transform import radon, rescale
 
-class simulatedSpectrumEstimations:
-    def __init__(self,materialMus, phantomLengths, initialWs,spectrum,ordering=0,theta=0,I_0_NormalizedImageData=None,transmissionMeasurement=None):
+class SpekEstimations:
+    def __init__(self,materialMus, phantomLengths, initialWs,spectrum,ordering=0,theta=0,I_0_NormalizedImageData=None,transmissionMeasurements=None):
         
-        self.materialMus = materialMus # numMaterials x numEnergyBins
+        self.materialMus = np.array(materialMus) # numMaterials x numEnergyBins
+        if self.materialMus.ndim == 1:
+            self.materialMus = [self.materialMus]
+
         self.numMaterials,self.numEnergyBins = np.shape(self.materialMus)
-        self.energySpectrum = energySpectrum
         self.Esteps, self.energySpectrum = spectrum
         self.numMeasurements = self.numMaterials*len(phantomLengths)
         self.phantomLengths = phantomLengths
@@ -16,15 +18,16 @@ class simulatedSpectrumEstimations:
 
         assert(self.numEnergyBins == len(self.energySpectrum))
 
-        self.A = np.zeros(self.numMeasurements,self.energySpectrum)
+        self.A = np.zeros((self.numMeasurements,self.numEnergyBins))
         self.Ws = initialWs
-        self.summedOverMeasurements = np.transpose(sum(self.A,axis=0)) ## numEnergyBins x 1
+        self.initialWs = initialWs
+        self.summedOverMeasurements = np.transpose(np.sum(self.A,axis=0)) ## numEnergyBins x 1
 
         self.setup()
 
-        if transmissionMeasurements is None and imageData is None:
+        if transmissionMeasurements is None and I_0_NormalizedImageData is None:
             self.transmissionMeasurements = self.simulateTransmissionMeasurements()  ## numMeasurements x 1 
-        else if imageData is not None:
+        elif imageData is not None:
             self.transmissionMeasurements = self.getTMeasurementsFromImageData(angle,I_0_NormalizedImageData) ## numMeasurements x 1 (correspond to one angle's projection, averaged over detectors)
         else:
             self.transmissionMeasurements = transmissionMeasurements; ## numMeasurements x 1
@@ -40,11 +43,11 @@ class simulatedSpectrumEstimations:
         if self.ordering==0:
             for m in range(self.numMaterials):
                 for n in range(self.numLengths):
-                    self.A[m*self.numMaterials+n,:] =  exp(-self.materialMus[m]*self.phantomLengths[n])
+                    self.A[m*self.numMaterials+n,:] =  np.exp(-self.materialMus[m]*self.phantomLengths[n])
         else: 
             for n in range(self.numLengths):
                 for m in range(self.numMaterials):
-                    self.A[n*self.numLengths+m,:] =  exp(-self.materialMus[m]*self.phantomLengths[n])
+                    self.A[n*self.numLengths+m,:] =  np.exp(-self.materialMus[m]*self.phantomLengths[n])
 
 
     def simulateTransmissionMeasurements(self):
@@ -82,7 +85,25 @@ class simulatedSpectrumEstimations:
         H = self.A*self.Ws ## numMeasurements x 1
         R = np.transpose(np.sum([self.A[i,:]*self.transmissionMeasurements[i]/H[i] for i in range(self.numMeasurements)],axis=0)) ## numEnergyBins x 1
         self.Ws = np.multiply(G,R) 
+        plt.figure()
+        plt.plot(self.Esteps, self.Ws, label="Estimate")
+        plt.plot(self.Esteps, self.energySpectrum, label="Ground Truth", alpha=0.5)
+        plt.plot(self.Esteps,self.initialWs,label="Initial Guess",linestyle="--",alpha=0.8)
+        plt.title("Count {0}".format(count))
         return self.getSpectrum(count+1)
+
+
+    '''------------------------------------------ Visualizing ------------------------------------------'''
+    def plotSpectrum(self):
+        plt.figure()
+        plt.plot(self.Esteps, self.energySpectrum, label="Ground Truth", alpha=0.5)
+        plt.plot(self.Esteps,self.initialWs,label="Initial Guess",linestyle="--",alpha=0.8)
+        plt.plot(self.Esteps,self.Ws,label="Estimate")
+        plt.title("Ground Truth (Total Num Photons: {})".format(np.sum(self.energySpectrum)))
+        plt.ylabel("Num Photons")
+        plt.xlabel("Energy (keV)")
+        plt.legend()
+        return 
 
 
 
