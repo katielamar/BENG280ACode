@@ -4,7 +4,7 @@ from skimage.transform import radon, rescale
 from xraydb import material_mu
 
 class SpekEstimations:
-    def __init__(self,materials, phantomLengths, initialWs,Es, groundTruth=None,theta=0,I_0_NormalizedImageData=None,transmissionMeasurements=None):
+    def __init__(self,materials, phantomLengths, initialWs,Es, groundTruth=None,theta=0,I_0_NormalizedImageData=None,transmissionMeasurements=None,plot=False):
         
         self.materials = np.array(materials) # numMaterials x 1
         self.numMaterials = len(materials)
@@ -21,10 +21,10 @@ class SpekEstimations:
 
         self.A = np.zeros((self.numMeasurements,self.numEnergyBins))
         self.Ws = initialWs
-        self.initialWs = initialWs
+        self.initialWs = np.array(initialWs)
         
 
-        self.setup()
+        self.setup(plot)
 
 
 
@@ -42,20 +42,21 @@ class SpekEstimations:
     
     '''------------------------------------------ Setup & Simulation Functions ------------------------------------------'''
 
-    def setup(self):
+    def setup(self,plot):
         for m in range(self.numMaterials):
             for n in range(self.numLengths):
                 mu = material_mu(self.materials[m], self.Esteps*10**3)
                 for j in range(self.numEnergyBins):
                     self.A[m*self.numMaterials+n,:] = -self.phantomLengths[n] * mu
-            plt.figure()
-            plt.plot(self.Esteps,mu)
-            plt.xlabel("Energy (keV)")
-            plt.ylabel("Mass Attenuation Coefficient [1/cm]")
-            plt.title(self.materials[m])
-            plt.show()
+            if plot:
+                plt.figure()
+                helper = plt.plot(self.Esteps,mu)
+                plt.xlabel("Energy (keV)")
+                plt.ylabel("Mass Attenuation Coefficient [1/cm]")
+                plt.title(self.materials[m])
+                plt.show()
 
-        self.A = np.exp(self.A)
+        self.A = np.abs(np.expm1(self.A))
 
 
     def simulateTransmissionMeasurements(self):
@@ -77,7 +78,7 @@ class SpekEstimations:
 
 
     '''------------------------------------------ Update Steps ------------------------------------------'''
-    def getSpectrum(self,count=0):
+    def getSpectrum(self,count=0,plot=False, plotFactor=10):
 
         '''
         G_j = [w_j^[n]/sumOverMeasurements(Aij)] 
@@ -86,48 +87,60 @@ class SpekEstimations:
         w_j^[n+1] =  G_j* R_j
 
          '''
+
+
+
         if count == self.numMeasurements:
             return self.Ws
+        elif count == 0:
+            plt.figure()
+            helper = plt.plot(self.Esteps,self.energySpectrum, label="Ground Truth")
+            helper = plt.plot(self.Esteps,self.initialWs, label="Initial Guess")
+            plt.xlabel("Energy (keV)")
+            plt.ylabel("Photon Count")
+            plt.title("Spectrums")
+            plt.legend()
+            plt.show()
+
+
 
 
         for j in range(self.numEnergyBins):
-            if np.sum(self.A[:,j]) == 0 :
-                print("Zero Division energyBin: j = {0}, Iteration count={1}".format(j,count))
-
-
+            sumOverMeasurements = np.sum(self.A[:,j])
+            if sumOverMeasurements == 0 :
+                print("G_j: Zero Division energyBin: j = {0}, Iteration count={1}".format(j,count))
             G_j = self.Ws[j]/np.sum(self.A[:,j])
             R_j = 0
             for i in range(self.numMeasurements):
                 H_i = 0
                 for jhat in range(self.numEnergyBins):
                     H_i += self.A[i,jhat]*self.Ws[jhat]
-                R_j += (self.A[i,j]*self.transmissionMeasurements[i])/H_i
+
+
+                R_j += (self.A[i,j]*self.transmissionMeasurements[i])/max(H_i,0.1)
 
 
             self.Ws[j] = G_j*R_j[j]
 
+        if plot and count%plotFactor == 0:
+            plt.figure()
+            helper = plt.plot(self.Esteps,self.energySpectrum, label="Ground Truth")
+            helper = plt.plot(self.Esteps,self.Ws, label="Estimate")
 
-
-
-        # G = np.divide(self.Ws,self.summedOverMeasurements) ## numEnergyBins x1 
-        # H = self.A*self.Ws ## numMeasurements x 1
-        # R = np.transpose(np.sum([self.A[i,:]*self.transmissionMeasurements[i]/H[i] for i in range(self.numMeasurements)],axis=0)) ## numEnergyBins x 1
-        # self.Ws = np.multiply(G,R) 
-        #plt.figure()
-        #plt.plot(self.Esteps, self.Ws, label="Estimate")
-        #plt.plot(self.Esteps, self.energySpectrum, label="Ground Truth", alpha=0.5)
-        #plt.plot(self.Esteps,self.initialWs,label="Initial Guess",linestyle="--",alpha=0.8)
-        
-        #plt.title("Count {0}".format(count))
-        return self.getSpectrum(count+1)
+            plt.xlabel("Energy (keV)")
+            plt.ylabel("Photon Count")
+            plt.title("Iteration {}".format(count))
+            plt.legend()
+            plt.show()
+        return self.getSpectrum(count=count+1,plot=plot, plotFactor=plotFactor)
 
 
     '''------------------------------------------ Visualizing ------------------------------------------'''
     def plotSpectrum(self):
         plt.figure()
-        plt.plot(self.Esteps, self.energySpectrum, label="Ground Truth", alpha=0.5)
-        plt.plot(self.Esteps,self.initialWs,label="Initial Guess",linestyle="--",alpha=0.8)
-        plt.plot(self.Esteps,self.Ws,label="Estimate")
+        helper = plt.plot(self.Esteps, self.energySpectrum, label="Ground Truth", alpha=0.5)
+        helper = plt.plot(self.Esteps,self.initialWs,label="Initial Guess",linestyle="--",alpha=0.8)
+        helper = plt.plot(self.Esteps,self.Ws,label="Estimate")
         plt.title("Ground Truth (Total Num Photons: {})".format(np.sum(self.energySpectrum)))
         plt.ylabel("Num Photons")
         plt.xlabel("Energy (keV)")
