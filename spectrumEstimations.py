@@ -3,27 +3,29 @@ import matplotlib.pyplot as plt
 from skimage.transform import radon, rescale
 
 class SpekEstimations:
-    def __init__(self,materialMus, phantomLengths, initialWs,spectrum,ordering=0,theta=0,I_0_NormalizedImageData=None,transmissionMeasurements=None):
+    def __init__(self,materialMus, phantomLengths, initialWs,spectrum,theta=0,I_0_NormalizedImageData=None,transmissionMeasurements=None):
         
         self.materialMus = np.array(materialMus) # numMaterials x numEnergyBins
         if self.materialMus.ndim == 1:
-            self.materialMus = [self.materialMus]
-
+            self.materialMus = np.reshape(self.materialMus,(1, len(self.materialMus)))
         self.numMaterials,self.numEnergyBins = np.shape(self.materialMus)
         self.Esteps, self.energySpectrum = spectrum
         self.numMeasurements = self.numMaterials*len(phantomLengths)
         self.phantomLengths = phantomLengths
         self.numLengths = len(self.phantomLengths)
-        self.ordering = ordering
+
 
         assert(self.numEnergyBins == len(self.energySpectrum))
+
 
         self.A = np.zeros((self.numMeasurements,self.numEnergyBins))
         self.Ws = initialWs
         self.initialWs = initialWs
-        self.summedOverMeasurements = np.transpose(np.sum(self.A,axis=0)) ## numEnergyBins x 1
+        
 
         self.setup()
+
+
 
         if transmissionMeasurements is None and I_0_NormalizedImageData is None:
             self.transmissionMeasurements = self.simulateTransmissionMeasurements()  ## numMeasurements x 1 
@@ -40,14 +42,12 @@ class SpekEstimations:
     '''------------------------------------------ Setup & Simulation Functions ------------------------------------------'''
 
     def setup(self):
-        if self.ordering==0:
-            for m in range(self.numMaterials):
-                for n in range(self.numLengths):
-                    self.A[m*self.numMaterials+n,:] =  np.exp(-self.materialMus[m]*self.phantomLengths[n])
-        else: 
+
+        for m in range(self.numMaterials):
             for n in range(self.numLengths):
-                for m in range(self.numMaterials):
-                    self.A[n*self.numLengths+m,:] =  np.exp(-self.materialMus[m]*self.phantomLengths[n])
+                for j in range(self.numEnergyBins):
+                    self.A[m*self.numMaterials+n,j] =  np.exp(-self.materialMus[m,j]*self.phantomLengths[n])
+
 
 
     def simulateTransmissionMeasurements(self):
@@ -81,15 +81,38 @@ class SpekEstimations:
         if count == self.numMeasurements:
             return self.Ws
 
-        G = np.divide(self.Ws,self.summedOverMeasurements) ## numEnergyBins x1 
-        H = self.A*self.Ws ## numMeasurements x 1
-        R = np.transpose(np.sum([self.A[i,:]*self.transmissionMeasurements[i]/H[i] for i in range(self.numMeasurements)],axis=0)) ## numEnergyBins x 1
-        self.Ws = np.multiply(G,R) 
-        plt.figure()
-        plt.plot(self.Esteps, self.Ws, label="Estimate")
-        plt.plot(self.Esteps, self.energySpectrum, label="Ground Truth", alpha=0.5)
-        plt.plot(self.Esteps,self.initialWs,label="Initial Guess",linestyle="--",alpha=0.8)
-        plt.title("Count {0}".format(count))
+
+        for j in range(self.numEnergyBins):
+
+
+
+            G_j = self.Ws[j]/np.sum(self.A[:,j])
+            R_j = 0
+            for i in range(self.numMeasurements):
+                H_i = 0
+                for jhat in range(self.numEnergyBins):
+                    H_i += self.A[i,jhat]*self.Ws[jhat]
+                if H_i == 0:
+                    print("H_i")
+                    print(count)
+                R_j += (self.A[i,j]*self.transmissionMeasurements[i])/H_i
+
+
+            self.Ws[j] = G_j*R_j[j]
+
+
+
+
+        # G = np.divide(self.Ws,self.summedOverMeasurements) ## numEnergyBins x1 
+        # H = self.A*self.Ws ## numMeasurements x 1
+        # R = np.transpose(np.sum([self.A[i,:]*self.transmissionMeasurements[i]/H[i] for i in range(self.numMeasurements)],axis=0)) ## numEnergyBins x 1
+        # self.Ws = np.multiply(G,R) 
+        #plt.figure()
+        #plt.plot(self.Esteps, self.Ws, label="Estimate")
+        #plt.plot(self.Esteps, self.energySpectrum, label="Ground Truth", alpha=0.5)
+        #plt.plot(self.Esteps,self.initialWs,label="Initial Guess",linestyle="--",alpha=0.8)
+        
+        #plt.title("Count {0}".format(count))
         return self.getSpectrum(count+1)
 
 
