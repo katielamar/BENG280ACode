@@ -1,18 +1,19 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from skimage.transform import radon, rescale
+from xraydb import material_mu
 
 class SpekEstimations:
-    def __init__(self,materialMus, phantomLengths, initialWs,spectrum,theta=0,I_0_NormalizedImageData=None,transmissionMeasurements=None):
+    def __init__(self,materials, phantomLengths, initialWs,Es, groundTruth=None,theta=0,I_0_NormalizedImageData=None,transmissionMeasurements=None):
         
-        self.materialMus = np.array(materialMus) # numMaterials x numEnergyBins
-        if self.materialMus.ndim == 1:
-            self.materialMus = np.reshape(self.materialMus,(1, len(self.materialMus)))
-        self.numMaterials,self.numEnergyBins = np.shape(self.materialMus)
-        self.Esteps, self.energySpectrum = spectrum
-        self.numMeasurements = self.numMaterials*len(phantomLengths)
+        self.materials = np.array(materials) # numMaterials x 1
+        self.numMaterials = len(materials)
+        self.Esteps = Es
+        self.energySpectrum = groundTruth
+        self.numEnergyBins = len(self.energySpectrum)
         self.phantomLengths = phantomLengths
         self.numLengths = len(self.phantomLengths)
+        self.numMeasurements = self.numMaterials*self.numLengths
 
 
         assert(self.numEnergyBins == len(self.energySpectrum))
@@ -42,12 +43,19 @@ class SpekEstimations:
     '''------------------------------------------ Setup & Simulation Functions ------------------------------------------'''
 
     def setup(self):
-
         for m in range(self.numMaterials):
             for n in range(self.numLengths):
+                mu = material_mu(self.materials[m], self.Esteps*10**3)
                 for j in range(self.numEnergyBins):
-                    self.A[m*self.numMaterials+n,j] =  np.exp(-self.materialMus[m,j]*self.phantomLengths[n])
+                    self.A[m*self.numMaterials+n,:] = -self.phantomLengths[n] * mu
+            plt.figure()
+            plt.plot(self.Esteps,mu)
+            plt.xlabel("Energy (keV)")
+            plt.ylabel("Mass Attenuation Coefficient [1/cm]")
+            plt.title(self.materials[m])
+            plt.show()
 
+        self.A = np.exp(self.A)
 
 
     def simulateTransmissionMeasurements(self):
@@ -83,7 +91,8 @@ class SpekEstimations:
 
 
         for j in range(self.numEnergyBins):
-
+            if np.sum(self.A[:,j]) == 0 :
+                print("Zero Division energyBin: j = {0}, Iteration count={1}".format(j,count))
 
 
             G_j = self.Ws[j]/np.sum(self.A[:,j])
@@ -92,9 +101,6 @@ class SpekEstimations:
                 H_i = 0
                 for jhat in range(self.numEnergyBins):
                     H_i += self.A[i,jhat]*self.Ws[jhat]
-                if H_i == 0:
-                    print("H_i")
-                    print(count)
                 R_j += (self.A[i,j]*self.transmissionMeasurements[i])/H_i
 
 
