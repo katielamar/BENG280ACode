@@ -20,8 +20,9 @@ class SpekEstimations:
 
 
         self.A = np.zeros((self.numMeasurements,self.numEnergyBins))
-        self.Ws = initialWs
-        self.initialWs = np.array(initialWs)
+        self.Ws = np.zeros((self.numMeasurements+1,self.numEnergyBins))
+        self.Ws[0,:] = initialWs
+
         
 
         self.setup(plot)
@@ -78,7 +79,7 @@ class SpekEstimations:
 
 
     '''------------------------------------------ Update Steps ------------------------------------------'''
-    def getSpectrum(self,count=0,plot=False, plotFactor=10):
+    def getSpectrum(self,count=0):
 
         '''
         G_j = [w_j^[n]/sumOverMeasurements(Aij)] 
@@ -91,11 +92,13 @@ class SpekEstimations:
 
 
         if count == self.numMeasurements:
+            plt.tight_layout()
+            plt.show()
             return self.Ws
         elif count == 0:
-            plt.figure()
+            fig = plt.figure()
             helper = plt.plot(self.Esteps,self.energySpectrum, label="Ground Truth")
-            helper = plt.plot(self.Esteps,self.initialWs, label="Initial Guess")
+            helper = plt.plot(self.Esteps,self.Ws[0], label="Initial Guess")
             plt.xlabel("Energy (keV)")
             plt.ylabel("Photon Count")
             plt.title("Spectrums")
@@ -109,38 +112,28 @@ class SpekEstimations:
             sumOverMeasurements = np.sum(self.A[:,j])
             if sumOverMeasurements == 0 :
                 print("G_j: Zero Division energyBin: j = {0}, Iteration count={1}".format(j,count))
-            G_j = self.Ws[j]/np.sum(self.A[:,j])
+            G_j = self.Ws[count,j]/np.sum(self.A[:,j])
             R_j = 0
             for i in range(self.numMeasurements):
                 H_i = 0
                 for jhat in range(self.numEnergyBins):
-                    H_i += self.A[i,jhat]*self.Ws[jhat]
+                    H_i += self.A[i,jhat]*self.Ws[count,jhat]
 
 
                 R_j += (self.A[i,j]*self.transmissionMeasurements[i])/max(H_i,0.1)
 
 
-            self.Ws[j] = G_j*R_j[j]
+            self.Ws[count+1,j] = G_j*R_j[j]
 
-        if plot and count%plotFactor == 0:
-            plt.figure()
-            helper = plt.plot(self.Esteps,self.energySpectrum, label="Ground Truth")
-            helper = plt.plot(self.Esteps,self.Ws, label="Estimate")
-
-            plt.xlabel("Energy (keV)")
-            plt.ylabel("Photon Count")
-            plt.title("Iteration {}".format(count))
-            plt.legend()
-            plt.show()
-        return self.getSpectrum(count=count+1,plot=plot, plotFactor=plotFactor)
+        return self.getSpectrum(count=count+1)
 
 
     '''------------------------------------------ Visualizing ------------------------------------------'''
     def plotSpectrum(self):
         plt.figure()
         helper = plt.plot(self.Esteps, self.energySpectrum, label="Ground Truth", alpha=0.5)
-        helper = plt.plot(self.Esteps,self.initialWs,label="Initial Guess",linestyle="--",alpha=0.8)
-        helper = plt.plot(self.Esteps,self.Ws,label="Estimate")
+        helper = plt.plot(self.Esteps,self.Ws[0],label="Initial Guess",linestyle="--",alpha=0.8)
+        helper = plt.plot(self.Esteps,self.Ws[-1],label="Estimate")
         plt.title("Ground Truth (Total Num Photons: {})".format(np.sum(self.energySpectrum)))
         plt.ylabel("Num Photons")
         plt.xlabel("Energy (keV)")
